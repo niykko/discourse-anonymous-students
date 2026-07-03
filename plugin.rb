@@ -7,7 +7,6 @@
 enabled_site_setting :anonymous_students_enabled
 
 register_asset "stylesheets/anonymous-students.scss"
-register_asset "javascripts/discourse/initializers/anonymous-students.js.es6"
 
 after_initialize do
   # 1. Register the custom field so Discourse knows it is allowed in the database
