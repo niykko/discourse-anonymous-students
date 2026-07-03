@@ -4,13 +4,11 @@ export default {
   name: "anonymous-students",
 
   initialize() {
-    // 0.8.37 is old; we bump the API version requirement to access the new methods
     withPluginApi("1.34.0", (api) => {
       
-      // Update 1: The modern replacement for includePostAttributes
-      api.addTrackedPostProperties(["true_author_username"]);
+      // FIX: Pass strings as arguments, do NOT wrap them in an array.
+      api.addTrackedPostProperties("true_author_id", "true_author_username");
 
-      // Update 2: The modern replacement for decorateWidget
       api.decorateCookedElement((element, helper) => {
         // Safety guard: ensure we are looking at a post
         if (!helper || !helper.getModel) return;
