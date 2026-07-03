@@ -16,12 +16,12 @@ after_initialize do
 
   # 2. Expose the hidden audit trail to staff via post serializer fields
   add_to_serializer(:post, :true_author_id) do
-    next unless scope&.current_user&.staff? || scope&.staff?
+    next unless scope.is_staff?
     object.custom_fields['true_author_id']
   end
 
   add_to_serializer(:post, :true_author_username) do
-    next unless scope&.current_user&.staff? || scope&.staff?
+    next unless scope.is_staff?
     object.custom_fields['true_author_username']
   end
 
@@ -61,5 +61,15 @@ after_initialize do
     # Change the author of the post to the single bot account
     post.user = anon_user
     post.user_id = anon_user.id
+    
+    # CRITICAL: Prevent the student's name from leaking on the category topic list
+    if post.is_first_post? && post.topic
+      post.topic.user = anon_user
+      post.topic.user_id = anon_user.id
+      
+      # Optional Bonus: Automatically make the real student "Watch" the topic 
+      # so they get email notifications when professors reply to their anonymous question!
+      TopicUser.change(original_user.id, post.topic.id, notification_level: TopicUser.notification_levels[:watching])
+    end
   end
 end
