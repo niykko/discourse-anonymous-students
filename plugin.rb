@@ -52,14 +52,20 @@ after_initialize do
       
       # 3. If this is the brand-new first post of a topic, clean up the topic wrapper
       if post.is_first_post? && post.topic
-        # Safely overwrite the topic owner directly in the database to prevent metadata leaks
+        
+        # FIX 1: Update the in-memory object! If not done, PostCreator 
+        # will overwrite the database with the original user on its final save.
+        post.topic.user_id = anon_user.id
+        post.topic.user = anon_user
+        
+        # Keep the update_columns as a safety net for immediate DB state
         post.topic.update_columns(user_id: anon_user.id)
         
-        # FIX: Pass the full 'original_user' object record here, not just the integer ID
-        TopicUser.change(original_user, post.topic.id, notification_level: TopicUser.notification_levels[:watching])
+        # FIX 2: Revert to passing the integer ID. Passing the object crashes the block.
+        TopicUser.change(original_user.id, post.topic.id, notification_level: TopicUser.notification_levels[:watching])
       end
     rescue => e
-      # Safety catch: If anything goes wrong, write it cleanly to your Discourse error logs
+      # Safety catch: If anything goes wrong, write it cleanly to Discourse error logs
       Rails.logger.error("[PLUGIN anonymous-students] Post swap failed: #{e.message}\n#{e.backtrace.join("\n")}")
     end
   end
