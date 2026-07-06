@@ -24,49 +24,63 @@ after_initialize do
     object.custom_fields['true_author_username']
   end
 
-  # Hook into the post creation process right before it saves to the database
+  # 3. INTERCEPT TOPICS: Swap the owner of the topic wrapper before it is ever saved
+  add_model_callback(:topic, :before_create) do
+    begin
+      next unless SiteSetting.anonymous_students_enabled
+      next unless self.category_id == SiteSetting.anonymous_students_category_id.to_i
+      
+      original_user = self.user
+      next unless original_user
+      next if original_user.staff?
+
+      anon_user = User.find_by(username: SiteSetting.anonymous_students_username)
+      if anon_user
+        self.user_id = anon_user.id
+        self.user = anon_user
+      end
+    rescue => e
+      Rails.logger.error("[PLUGIN anonymous-students] Topic swap failed: #{e.message}")
+    end
+  end
+
+  # 4. INTERCEPT POSTS: Swap the owner of the post (handles replies AND first post bodies)
   on(:before_create_post) do |post|
     begin
       next unless SiteSetting.anonymous_students_enabled
-      
-      target_category_id = SiteSetting.anonymous_students_category_id.to_i
-      post_category_id = post.topic&.category_id
-
-      # Only run this logic inside our specific anonymous category
-      next unless post_category_id == target_category_id
+      next unless post.topic&.category_id == SiteSetting.anonymous_students_category_id.to_i
       
       original_user = post.user
       next unless original_user
-      next if original_user.staff? # Keep staff members visible for transparency
+      next if original_user.staff?
 
       anon_user = User.find_by(username: SiteSetting.anonymous_students_username)
       next unless anon_user
 
-      # 1. Store the true author information securely in hidden custom fields
+      # Store the true author information securely
       post.custom_fields['true_author_id'] = original_user.id
       post.custom_fields['true_author_username'] = original_user.username
 
-      # 2. Swap out the post author with our purely internal bot account
+      # Swap out the post author
       post.user_id = anon_user.id
       post.user = anon_user
-      
-      # 3. If this is the brand-new first post of a topic, clean up the topic wrapper
-      if post.is_first_post? && post.topic
-        
-        # FIX 1: Update the in-memory object! If not done, PostCreator 
-        # will overwrite the database with the original user on its final save.
-        post.topic.user_id = anon_user.id
-        post.topic.user = anon_user
-        
-        # Keep the update_columns as a safety net for immediate DB state
-        post.topic.update_columns(user_id: anon_user.id)
-        
-        # FIX 2: Revert to passing the integer ID. Passing the object crashes the block.
-        TopicUser.change(original_user.id, post.topic.id, notification_level: TopicUser.notification_levels[:watching])
-      end
     rescue => e
-      # Safety catch: If anything goes wrong, write it cleanly to Discourse error logs
-      Rails.logger.error("[PLUGIN anonymous-students] Post swap failed: #{e.message}\n#{e.backtrace.join("\n")}")
+      Rails.logger.error("[PLUGIN anonymous-students] Post swap failed: #{e.message}")
+    end
+  end
+
+  # 5. WATCHERS: Because the topic now belongs to a bot, the original student won't get notifications. 
+  # We must manually force the real student to "watch" the topic after it is created.
+  on(:topic_created) do |topic, opts, user|
+    begin
+      next unless SiteSetting.anonymous_students_enabled
+      next unless topic.category_id == SiteSetting.anonymous_students_category_id.to_i
+      next if user.staff?
+
+      # 'user' here is the original student who initiated the creation
+      TopicUser.change(user.id, topic.id, notification_level: TopicUser.notification_levels[:watching])
+    rescue => e
+      Rails.logger.error("[PLUGIN anonymous-students] Watcher assignment failed: #{e.message}")
     end
   end
 end
