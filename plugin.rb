@@ -1,6 +1,6 @@
 # name: discourse-anonymous-students
-# about: Intercepts student posts in a specific category and remaps them to a single anonymous user to prevent database bloat.
-# version: 1.0.0
+# about: Intercepts student posts in selected categories and remaps them to a single anonymous user to prevent database bloat.
+# version: 1.1.0
 # authors: niykko + AI
 
 # Tell Discourse about our toggle switch
@@ -27,16 +27,17 @@ after_initialize do
   module ::AnonymousStudentPostCreator
     def initialize(user, opts)
       @true_author = nil
-      cat_id = SiteSetting.anonymous_students_category_id.to_i
-      
-      # Figure out if this post/topic is destined for the anonymous category
+      category_ids =
+        (SiteSetting.anonymous_students_category_id.presence || "").split("|").map(&:to_i)
+
+      # Figure out if this post/topic is destined for an anonymous category
       is_anon_category = false
-      if opts[:category].to_i == cat_id || opts[:category_id].to_i == cat_id
+      if category_ids.include?(opts[:category].to_i) || category_ids.include?(opts[:category_id].to_i)
         is_anon_category = true
       elsif opts[:topic_id].present?
         # If it's a reply, check the parent topic's category
         topic = Topic.find_by(id: opts[:topic_id])
-        is_anon_category = (topic&.category_id == cat_id)
+        is_anon_category = category_ids.include?(topic&.category_id)
       end
 
       # If conditions are met, swap the user at the front door!

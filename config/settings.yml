@@ -3,7 +3,8 @@ plugins:
     default: false
     client: false
   anonymous_students_category_id:
-    default: -1
+    type: category_list
+    default: ""
     client: false
   anonymous_students_username:
     default: 'Anonymous_Student'
