@@ -1,6 +1,6 @@
 # name: discourse-anonymous-students
 # about: Intercepts student posts in selected categories and remaps them to a single anonymous user to prevent database bloat.
-# version: 1.2.0
+# version: 1.2.1
 # authors: niykko + AI
 
 # Tell Discourse about our toggle switch
@@ -32,12 +32,20 @@ after_initialize do
     if object.post_number == 1
       true
     else
+      # Topic pages share one TopicView across their post serializers, so use it
+      # to avoid repeating this lookup for every reply. A standalone post
+      # response performs only one lookup and can use a local hash.
       original_author_ids =
-        RequestStore.store[:anonymous_students_original_author_ids] ||= {}
+        if @topic_view
+          @topic_view.instance_variable_get(:@anonymous_students_original_author_ids) ||
+            @topic_view.instance_variable_set(:@anonymous_students_original_author_ids, {})
+        else
+          {}
+        end
       original_author_id =
         original_author_ids.fetch(object.topic_id) do
           original_author_ids[object.topic_id] =
-            PostCustomField
+            ::PostCustomField
               .joins(:post)
               .where(
                 name: 'true_author_id',
