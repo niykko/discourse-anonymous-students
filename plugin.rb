@@ -1,6 +1,6 @@
 # name: discourse-anonymous-students
 # about: Intercepts student posts in selected categories and remaps them to a single anonymous user to prevent database bloat.
-# version: 1.1.0
+# version: 1.2.0
 # authors: niykko + AI
 
 # Tell Discourse about our toggle switch
@@ -21,6 +21,33 @@ after_initialize do
   add_to_serializer(:post, :true_author_username) do
     next unless scope.is_staff?
     object.custom_fields['true_author_username']
+  end
+
+  # Publicly expose only whether this post came from the topic's original
+  # student author. The author's identity remains available to staff only.
+  add_to_serializer(:post, :anonymous_students_original_poster) do
+    true_author_id = object.custom_fields['true_author_id']
+    next false if true_author_id.blank?
+
+    if object.post_number == 1
+      true
+    else
+      original_author_ids =
+        RequestStore.store[:anonymous_students_original_author_ids] ||= {}
+      original_author_id =
+        original_author_ids.fetch(object.topic_id) do
+          original_author_ids[object.topic_id] =
+            PostCustomField
+              .joins(:post)
+              .where(
+                name: 'true_author_id',
+                posts: { topic_id: object.topic_id, post_number: 1 }
+              )
+              .pick(:value)
+        end
+
+      original_author_id.present? && true_author_id.to_i == original_author_id.to_i
+    end
   end
 
   # 2. Intercept PostCreator directly
